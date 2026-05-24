@@ -11,6 +11,7 @@ __pycache__/
 
 # Configuration with sensitive keys
 config.ini
+ba2.py
 
 # IDE
 .vscode/
