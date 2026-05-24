@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+
+# Debug
+.debug/
+
+# Configuration with sensitive keys
+config.ini
+
+# IDE
+.vscode/
+.idea/
