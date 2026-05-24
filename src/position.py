@@ -28,8 +28,9 @@ def get_last_filled_price(client, symbol: str, tick_size: float) -> float:
         trades = client.futures_account_trades(symbol=symbol, limit=2)
         if not trades:
             return 0.0
-        if len(trades) >= 2 and trades[0]["time"] < trades[1]["time"]:
-            trades[0], trades[1] = trades[1], trades[0]
+        # Binance API 默认按时间降序返回（最新在前），
+        # 但也可能不保证顺序，所以显式按时间排序取最新。
+        trades.sort(key=lambda t: t["time"], reverse=True)
         return round_price(float(trades[0]["price"]), tick_size)
     except Exception as e:
         logger.error("获取最新成交价格失败: %s", e)

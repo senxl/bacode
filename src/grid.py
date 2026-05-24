@@ -226,6 +226,20 @@ class GridOrchestrator:
         if now - self._last_reload_time >= config.RELOAD_CHECK_INTERVAL:
             self._last_reload_time = now
             if config.try_reload():
+                new_symbol = config.get_symbol()
+                symbol_changed = (new_symbol != self.symbol)
+                if symbol_changed:
+                    logger.info("♻️ 交易对切换: %s → %s", self.symbol, new_symbol)
+                    self.symbol = new_symbol
+                    # 重新获取新交易对的精度信息
+                    try:
+                        filters = get_symbol_filters(self.client, self.symbol)
+                        self.tick_size = filters["tick_size"]
+                        self.step_size = filters["step_size"]
+                    except Exception as e:
+                        logger.error("♻️ 获取新交易对 %s 信息失败: %s", self.symbol, e)
+                        return
+
                 self.trade_quantity = round_quantity(config.get_trade_quantity(), self.step_size)
                 self.savepos_qty = round_quantity(
                     config.get_trade_quantity() * config.get_savepos_multiplier(), self.step_size
@@ -237,7 +251,7 @@ class GridOrchestrator:
                 logger.info(
                     "♻️ 参数已热更新 | quantity=%s | savepos=%s | grid=%s | symbol=%s",
                     self.trade_quantity, self.savepos_qty,
-                    grid_size, config.get_symbol(),
+                    grid_size, self.symbol,
                 )
                 # 重新设置杠杆（热更新生效）
                 try:
@@ -245,54 +259,19 @@ class GridOrchestrator:
                     logger.info("♻️ 已重设杠杆为 %sx", config.get_leverage())
                 except Exception as e:
                     logger.warning("♻️ 重设杠杆失败（非致命）: %s", e)
+                # 交易对切换时重新初始化网格
+                if symbol_changed:
+                    price = self._current_price()
+                    self.state.init_from_price(price)
+                    self._cancel_all()
+                    self._place_both_grid_orders()
+                    logger.info("♻️ 已在新交易对 %s 上重新初始化网格", self.symbol)
                 self._push_state(message="♻️ 配置已热更新")
 
 
-def _run_gui_loop():
-    """在单独线程启动 GUI 主循环。"""
-    import tkinter as tk
-    from threading import Thread
-    t = Thread(target=gui.launch, daemon=True)
-    t.start()
-    # 短暂等待确保 tk root 创建完毕
-    time.sleep(0.5)
-
-
-def run(client):
-    """主入口：初始化并进入事件循环。"""
-    symbol = config.get_symbol()
-
-    # 获取交易对精度信息
-    try:
-        filters = get_symbol_filters(client, symbol)
-    except Exception as e:
-        logger.error("获取交易对信息失败: %s", e)
-        return
-
-    tick_size = filters["tick_size"]
-    step_size = filters["step_size"]
-    logger.info(
-        "交易对 %s 规则: tickSize=%s, stepSize=%s, minNotional=%s",
-        symbol, tick_size, step_size, filters["min_notional"],
-    )
-
-    trade_qty = round_quantity(config.get_trade_quantity(), step_size)
-    savepos_qty = round_quantity(config.get_trade_quantity() * config.get_savepos_multiplier(), step_size)
-    logger.info("调整后交易数量: %s, 补仓数量: %s", trade_qty, savepos_qty)
-
-    orch = GridOrchestrator(
-        client, symbol, trade_qty, savepos_qty, tick_size, step_size
-    )
-    orch.setup()
-
-    # 如果启用了 GUI，启动面板
-    if config.GUI_ENABLED:
-        logger.info("🖥️ 启动 GUI 监控面板...")
-        _run_gui_loop()
-
-    logger.info("开始监控价格...")
+def _trading_loop(orch):
+    """交易主循环（可在主线程或后台线程运行）。"""
     add_order = None
-
     while True:
         try:
             time.sleep(config.POLL_INTERVAL)
@@ -333,3 +312,43 @@ def run(client):
             logger.error("未知错误: %s", e)
             orch._push_state(message=f"错误: {e}")
             time.sleep(config.ERROR_SLEEP)
+
+
+def run(client):
+    """主入口：初始化并进入事件循环。"""
+    symbol = config.get_symbol()
+
+    # 获取交易对精度信息
+    try:
+        filters = get_symbol_filters(client, symbol)
+    except Exception as e:
+        logger.error("获取交易对信息失败: %s", e)
+        return
+
+    tick_size = filters["tick_size"]
+    step_size = filters["step_size"]
+    logger.info(
+        "交易对 %s 规则: tickSize=%s, stepSize=%s, minNotional=%s",
+        symbol, tick_size, step_size, filters["min_notional"],
+    )
+
+    trade_qty = round_quantity(config.get_trade_quantity(), step_size)
+    savepos_qty = round_quantity(config.get_trade_quantity() * config.get_savepos_multiplier(), step_size)
+    logger.info("调整后交易数量: %s, 补仓数量: %s", trade_qty, savepos_qty)
+
+    orch = GridOrchestrator(
+        client, symbol, trade_qty, savepos_qty, tick_size, step_size
+    )
+    orch.setup()
+
+    if config.GUI_ENABLED:
+        # GUI 需要在主线程运行（tkinter 要求），
+        # 交易循环放到后台线程。
+        logger.info("🖥️ 启动 GUI 监控面板...")
+        from threading import Thread
+        t = Thread(target=_trading_loop, args=(orch,), daemon=True)
+        t.start()
+        gui.launch()  # 阻塞在主线程
+    else:
+        logger.info("开始监控价格...")
+        _trading_loop(orch)
