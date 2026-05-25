@@ -69,7 +69,7 @@ class SymbolConfig:
         self.grid_mode: str = "fixed"          # fixed / atr
         self.atr_period: int = 14              # ATR 计算周期
         self.atr_multiplier: float = 0.5       # grid_size = ATR × multiplier
-        self.atr_update_interval: float = 300  # ATR 刷新间隔（秒），默认 5 分钟
+        self.atr_update_interval: float = 86400  # ATR 刷新间隔（秒），默认 1 天
         self.atr_change_threshold: float = 0.1 # ATR 变化超过此比例才更新步长（10%）
 
 
@@ -194,7 +194,7 @@ def _load_ini() -> bool:
             sc.grid_mode           = _parser.get(section, "grid_mode", fallback="fixed").lower()
             sc.atr_period          = _parser.getint(section, "atr_period", fallback=14)
             sc.atr_multiplier      = _parser.getfloat(section, "atr_multiplier", fallback=0.5)
-            sc.atr_update_interval = _parser.getfloat(section, "atr_update_interval", fallback=300.0)
+            sc.atr_update_interval = _parser.getfloat(section, "atr_update_interval", fallback=86400.0)
             sc.atr_change_threshold = _parser.getfloat(section, "atr_change_threshold", fallback=0.1)
             _all_symbols[section] = sc
 
