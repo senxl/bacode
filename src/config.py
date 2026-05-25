@@ -54,6 +54,7 @@ class SymbolConfig:
     __slots__ = (
         "trade_type", "leverage", "trade_quantity", "savepos_multiplier",
         "grid_size", "grid_size_over", "price_upper_limit", "price_lower_limit",
+        "grid_mode", "atr_period", "atr_multiplier", "atr_update_interval", "atr_change_threshold",
     )
     def __init__(self):
         self.trade_type: str = "SHORT"
@@ -64,6 +65,12 @@ class SymbolConfig:
         self.grid_size_over: float = 1.5
         self.price_upper_limit: float = 110.0
         self.price_lower_limit: float = 50.0
+        # —— ATR 动态步长 ——
+        self.grid_mode: str = "fixed"          # fixed / atr
+        self.atr_period: int = 14              # ATR 计算周期
+        self.atr_multiplier: float = 0.5       # grid_size = ATR × multiplier
+        self.atr_update_interval: float = 300  # ATR 刷新间隔（秒），默认 5 分钟
+        self.atr_change_threshold: float = 0.1 # ATR 变化超过此比例才更新步长（10%）
 
 
 _all_symbols: dict[str, SymbolConfig] = {}
@@ -101,6 +108,21 @@ def get_price_upper_limit() -> float:
 
 def get_price_lower_limit() -> float:
     return _current().price_lower_limit
+
+def get_grid_mode() -> str:
+    return _current().grid_mode
+
+def get_atr_period() -> int:
+    return _current().atr_period
+
+def get_atr_multiplier() -> float:
+    return _current().atr_multiplier
+
+def get_atr_update_interval() -> float:
+    return _current().atr_update_interval
+
+def get_atr_change_threshold() -> float:
+    return _current().atr_change_threshold
 
 def get_symbol() -> str:
     with _lock:
@@ -169,6 +191,11 @@ def _load_ini() -> bool:
             sc.grid_size_over      = _parser.getfloat(section, "grid_size_over",   fallback=1.5)
             sc.price_upper_limit   = _parser.getfloat(section, "price_upper_limit", fallback=110.0)
             sc.price_lower_limit   = _parser.getfloat(section, "price_lower_limit", fallback=50.0)
+            sc.grid_mode           = _parser.get(section, "grid_mode", fallback="fixed").lower()
+            sc.atr_period          = _parser.getint(section, "atr_period", fallback=14)
+            sc.atr_multiplier      = _parser.getfloat(section, "atr_multiplier", fallback=0.5)
+            sc.atr_update_interval = _parser.getfloat(section, "atr_update_interval", fallback=300.0)
+            sc.atr_change_threshold = _parser.getfloat(section, "atr_change_threshold", fallback=0.1)
             _all_symbols[section] = sc
 
         _last_mtime = mtime

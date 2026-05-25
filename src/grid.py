@@ -20,6 +20,7 @@ from .strategy import (
     should_place_grid_orders, should_trigger_breakout,
     breakout_direction, new_price_after_breakout,
 )
+from .atr import calc_atr
 from . import gui
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,9 @@ class GridOrchestrator:
         self._last_reload_time: float = 0.0
         self._last_kline_fetch: float = 0.0
         self._kline_interval: str = config.KLINE_INTERVAL
+        # —— ATR 动态步长状态 ——
+        self._last_atr_update: float = 0.0
+        self._last_atr_value: float = 0.0
 
     def _current_price(self) -> float:
         return float(self.client.futures_symbol_ticker(symbol=self.symbol)["price"])
@@ -55,6 +59,75 @@ class GridOrchestrator:
             current_price,
         )
 
+    # ---------- ATR 动态步长 ----------
+    def _try_update_atr(self) -> None:
+        """定时刷新 ATR，变化超过阈值时更新网格步长。"""
+        if config.get_grid_mode() != "atr":
+            return
+
+        now = time.time()
+        interval = config.get_atr_update_interval()
+        if now - self._last_atr_update < interval:
+            return
+        self._last_atr_update = now
+
+        try:
+            raw = self.client.futures_klines(
+                symbol=self.symbol,
+                interval=self._kline_interval,
+                limit=max(config.get_atr_period() + 5, 50),
+            )
+            klines = []
+            for k in raw:
+                klines.append({
+                    "time": k[0],
+                    "open": float(k[1]),
+                    "high": float(k[2]),
+                    "low": float(k[3]),
+                    "close": float(k[4]),
+                    "volume": float(k[5]),
+                })
+
+            atr = calc_atr(klines, config.get_atr_period())
+            if atr <= 0:
+                return
+
+            threshold = config.get_atr_change_threshold()
+            # 与上次 ATR 比较，变化超过阈值才更新
+            if self._last_atr_value > 0:
+                change = abs(atr - self._last_atr_value) / self._last_atr_value
+                if change < threshold:
+                    logger.debug(
+                        "ATR 变化 %.2f%% 未达阈值 %.0f%%，保持当前步长",
+                        change * 100, threshold * 100,
+                    )
+                    self._push_state(atr_value=round(atr, 4))
+                    return
+
+            new_grid_size = round_price(atr * config.get_atr_multiplier(), self.tick_size)
+            if new_grid_size <= 0:
+                return
+
+            old_grid_size = abs(self.state.signed_grid_size)
+            self.state.signed_grid_size = (
+                new_grid_size if config.get_trade_type() == "LONG" else -new_grid_size
+            )
+            self._last_atr_value = atr
+
+            logger.info(
+                "📐 ATR 动态步长更新 | ATR(%d)=%.4f | 旧步长=%s → 新步长=%s | 倍数=%.2f",
+                config.get_atr_period(), atr,
+                round_price(old_grid_size, self.tick_size),
+                new_grid_size, config.get_atr_multiplier(),
+            )
+            self._push_state(
+                atr_value=round(atr, 4),
+                grid_size=new_grid_size,
+                message=f"📐 ATR步长更新: {round_price(old_grid_size, self.tick_size)} → {new_grid_size}",
+            )
+        except Exception as e:
+            logger.warning("ATR 刷新失败: %s", e)
+
     # ---------- 推送到 GUI ----------
     def _push_state(self, **kwargs) -> None:
         """向 GUI 共享状态写入，当 GUI 关闭时无副作用。"""
@@ -69,6 +142,8 @@ class GridOrchestrator:
             savepos_qty=self.savepos_qty,
             upper_limit=config.get_price_upper_limit(),
             lower_limit=config.get_price_lower_limit(),
+            grid_mode=config.get_grid_mode(),
+            atr_value=self._last_atr_value,
         )
         base.update(kwargs)  # kwargs override base — no duplicate key errors
         gui.set_state(**base)
@@ -248,10 +323,15 @@ class GridOrchestrator:
                 self.state.signed_grid_size = (
                     grid_size if config.get_trade_type() == "LONG" else -grid_size
                 )
+                # ATR 模式切换时重置状态，触发即时刷新
+                if config.get_grid_mode() == "atr":
+                    self._last_atr_update = 0.0
+                    self._last_atr_value = 0.0
+                    logger.info("♻️ ATR 模式已启用，将在下个周期计算动态步长")
                 logger.info(
-                    "♻️ 参数已热更新 | quantity=%s | savepos=%s | grid=%s | symbol=%s",
+                    "♻️ 参数已热更新 | quantity=%s | savepos=%s | grid=%s | mode=%s | symbol=%s",
                     self.trade_quantity, self.savepos_qty,
-                    grid_size, self.symbol,
+                    grid_size, config.get_grid_mode(), self.symbol,
                 )
                 # 重新设置杠杆（热更新生效）
                 try:
@@ -281,6 +361,9 @@ def _trading_loop(orch):
 
             # 0.5. K线数据获取（节流30秒）
             orch._fetch_klines()
+
+            # 0.6. ATR 动态步长刷新
+            orch._try_update_atr()
 
             # 1. 补仓监控
             add_order = orch.handle_savpos(add_order)
