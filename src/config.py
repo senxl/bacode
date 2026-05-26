@@ -85,7 +85,11 @@ _all_symbols: dict[str, SymbolConfig] = {}
 def _current() -> SymbolConfig:
     """获取当前激活交易对的配置（线程安全）。"""
     with _lock:
-        return _all_symbols.setdefault(ACTIVE_SYMBOL, SymbolConfig())
+        sc = _all_symbols.get(ACTIVE_SYMBOL)
+        if sc is None:
+            sc = SymbolConfig()
+            _all_symbols[ACTIVE_SYMBOL] = sc
+        return sc
 
 
 def get_trade_type() -> str:
@@ -237,6 +241,17 @@ def validate() -> list[str]:
         errors.append(f"[{ACTIVE_SYMBOL}] grid_size 必须 > 0")
     if cur.trade_quantity <= 0:
         errors.append(f"[{ACTIVE_SYMBOL}] trade_quantity 必须 > 0")
+    if cur.grid_mode not in ("fixed", "atr"):
+        errors.append(f"[{ACTIVE_SYMBOL}] grid_mode 必须为 fixed 或 atr，当前: {cur.grid_mode}")
+    if cur.grid_mode == "atr":
+        if cur.atr_period <= 0:
+            errors.append(f"[{ACTIVE_SYMBOL}] atr_period 必须 > 0，当前: {cur.atr_period}")
+        if cur.atr_multiplier <= 0:
+            errors.append(f"[{ACTIVE_SYMBOL}] atr_multiplier 必须 > 0，当前: {cur.atr_multiplier}")
+        if cur.atr_update_interval <= 0:
+            errors.append(f"[{ACTIVE_SYMBOL}] atr_update_interval 必须 > 0，当前: {cur.atr_update_interval}")
+        if cur.atr_change_threshold <= 0:
+            errors.append(f"[{ACTIVE_SYMBOL}] atr_change_threshold 必须 > 0，当前: {cur.atr_change_threshold}")
     return errors
 
 

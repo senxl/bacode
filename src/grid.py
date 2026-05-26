@@ -109,8 +109,10 @@ class GridOrchestrator:
                     return
 
             new_grid_size = round_price(atr * config.get_atr_multiplier(), self.tick_size)
+            # 防止 round 后变 0（低价格资产 + 小倍数场景）
             if new_grid_size <= 0:
-                return
+                new_grid_size = self.tick_size  # 最小一个 tick
+                logger.warning("ATR 步长计算为 0，使用最小 tick_size=%s", self.tick_size)
 
             old_grid_size = abs(self.state.signed_grid_size)
             self.state.signed_grid_size = (
@@ -136,8 +138,9 @@ class GridOrchestrator:
             if config.get_atr_immediate_rebuild():
                 self._cancel_all()
                 # 注意：用当前价近似成交价，非实际成交价
-                self.state.last_filled_price = self._current_price()
-                self._place_both_grid_orders()
+                price = self._current_price()
+                self.state.last_filled_price = price
+                self._place_both_grid_orders(price)
                 logger.info("📐 ATR 步长变更，网格已立即重建")
         except Exception as e:
             # 失败不推进定时器，下次循环立即重试
@@ -197,11 +200,11 @@ class GridOrchestrator:
         logger.info("初始 %s 价格: %s", self.symbol, price)
         self.state.init_from_price(price)
         self._cancel_all()
-        self._place_both_grid_orders()
+        self._place_both_grid_orders(price)
         self._push_state(current_price=price, last_filled=self.state.last_filled_price,
                          message="初始化完成")
 
-    def _place_both_grid_orders(self) -> None:
+    def _place_both_grid_orders(self, current_price: float = 0.0) -> None:
         """挂双边网格限价单。"""
         create_limit_order_with_fallback(
             self.client, self.symbol,
@@ -213,7 +216,9 @@ class GridOrchestrator:
             "SELL", self.state.sell_price(),
             self.trade_quantity, self.tick_size,
         )
-        self._log_grid_orders(self.state.buy_price(), self.state.sell_price(), self._current_price())
+        if current_price <= 0:
+            current_price = self._current_price()
+        self._log_grid_orders(self.state.buy_price(), self.state.sell_price(), current_price)
 
     # ---------- 阶段 2: 补仓监控 ----------
     def handle_savpos(self, add_order: dict | None) -> dict | None:
@@ -265,7 +270,7 @@ class GridOrchestrator:
                 self.state.last_filled_price = price
                 if changed:
                     logger.info("🔔 最新成交价格: %s", self.state.last_filled_price)
-            self._place_both_grid_orders()
+            self._place_both_grid_orders(price)
             self._push_state(last_filled=self.state.last_filled_price, message="网格重建完成")
 
     # ---------- 阶段 4: 突破处理 ----------
@@ -319,10 +324,12 @@ class GridOrchestrator:
                 self.savepos_qty = round_quantity(
                     config.get_trade_quantity() * config.get_savepos_multiplier(), self.step_size
                 )
-                grid_size = config.get_grid_size()
-                self.state.signed_grid_size = (
-                    grid_size if config.get_trade_type() == "LONG" else -grid_size
-                )
+                # ATR 模式不覆盖动态步长，仅 fixed 模式从 config 取值
+                if config.get_grid_mode() != "atr":
+                    grid_size = config.get_grid_size()
+                    self.state.signed_grid_size = (
+                        grid_size if config.get_trade_type() == "LONG" else -grid_size
+                    )
                 # ATR 模式切换时重置状态，触发即时刷新
                 if config.get_grid_mode() == "atr":
                     self._last_atr_update = 0.0
@@ -331,7 +338,7 @@ class GridOrchestrator:
                 logger.info(
                     "♻️ 参数已热更新 | quantity=%s | savepos=%s | grid=%s | mode=%s | symbol=%s",
                     self.trade_quantity, self.savepos_qty,
-                    grid_size, config.get_grid_mode(), self.symbol,
+                    abs(self.state.signed_grid_size), config.get_grid_mode(), self.symbol,
                 )
                 # 重新设置杠杆（热更新生效）
                 try:
@@ -344,7 +351,7 @@ class GridOrchestrator:
                     price = self._current_price()
                     self.state.init_from_price(price)
                     self._cancel_all()
-                    self._place_both_grid_orders()
+                    self._place_both_grid_orders(price)
                     logger.info("♻️ 已在新交易对 %s 上重新初始化网格", self.symbol)
                 self._push_state(message="♻️ 配置已热更新")
 
@@ -368,6 +375,7 @@ def _trading_loop(orch):
             # 1. 补仓监控
             add_order = orch.handle_savpos(add_order)
             if add_order is not None:
+                time.sleep(config.POLL_INTERVAL)
                 continue
 
             price = orch._current_price()

@@ -12,6 +12,11 @@ def _true_range(candle: Dict, prev_close: float) -> float:
     """计算单根K线的 True Range。"""
     high = candle["high"]
     low = candle["low"]
+    if high < low:
+        logger.warning("K线数据异常: high(%.4f) < low(%.4f)，交换处理", high, low)
+        high, low = low, high
+    if high == 0 and low == 0:
+        return 0.0
     return max(
         high - low,
         abs(high - prev_close),

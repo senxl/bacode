@@ -20,14 +20,14 @@ class OrderSide:
 
 
 def cancel_all_open_orders(client, symbol: str):
-    """取消指定交易对的所有未成交订单。"""
+    """取消指定交易对的所有未成交订单。失败时抛异常。"""
     try:
         result = client.futures_cancel_all_open_orders(symbol=symbol)
         logger.info("已取消 %s 的所有挂单", symbol)
         return result
     except Exception as e:
         logger.error("取消所有挂单失败: %s", e)
-        return None
+        raise
 
 
 def get_order_counts(client, symbol: str) -> tuple[int, int]:

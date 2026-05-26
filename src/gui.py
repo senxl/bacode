@@ -7,6 +7,7 @@ GUI 监控面板（tkinter，零外部依赖）
 import tkinter as tk
 from tkinter import ttk
 import logging
+import math
 import time
 from datetime import datetime, timezone
 from threading import Lock
@@ -152,13 +153,18 @@ class KlineChart(tk.Canvas):
 
         # --- 网格线 & 价格标签 ---
         grid_lines = 6
+        # 根据价格量级自动选择小数位
+        if price_range > 0:
+            auto_prec = max(0, min(8, int(-math.log10(price_range)) + 2))
+        else:
+            auto_prec = 2
         for gi in range(grid_lines + 1):
             frac = gi / grid_lines
             y = margin_top + chart_h * (1.0 - frac)
             price_label = price_min + frac * price_range
             self.create_line(margin_left, y, w - margin_right, y,
                              fill=GRID_COLOR, dash=(2, 4), width=1)
-            self.create_text(margin_left - 5, y, text=f"{price_label:.2f}",
+            self.create_text(margin_left - 5, y, text=f"{price_label:.{auto_prec}f}",
                              fill=TEXT_COLOR, font=("Consolas", 8),
                              anchor="e")
 
@@ -194,7 +200,7 @@ class KlineChart(tk.Canvas):
             self.create_line(margin_left, y_cp, w - margin_right, y_cp,
                              fill="#fbbf24", dash=(6, 3), width=1.5)
             self.create_text(w - margin_right, y_cp,
-                             text=f" {self._current_price:.2f}",
+                             text=f" {self._current_price:.{auto_prec}f}",
                              fill="#fbbf24", font=("Consolas", 9, "bold"),
                              anchor="w")
 
@@ -204,7 +210,7 @@ class KlineChart(tk.Canvas):
             self.create_line(margin_left, y_gp, w - margin_right, y_gp,
                              fill="#e2e8f0", dash=(4, 6), width=1)
             self.create_text(margin_left + 5, y_gp,
-                             text=f"网格 {self._grid_price:.2f}",
+                             text=f"网格 {self._grid_price:.{auto_prec}f}",
                              fill="#e2e8f0", font=("Consolas", 8),
                              anchor="sw")
 
@@ -411,8 +417,12 @@ class Dashboard(ttk.Frame):
 
         # 当前价格大字
         cp = s.get("current_price", 0)
+        if cp > 0:
+            cp_prec = max(0, min(8, int(-math.log10(cp)) + 3))
+        else:
+            cp_prec = 2
         self.lbl_chart_price.config(
-            text=f"{cp:.2f}" if cp else "—",
+            text=f"{cp:.{cp_prec}f}" if cp else "—",
             foreground="#fbbf24" if cp else TEXT_COLOR,
         )
 
@@ -420,8 +430,14 @@ class Dashboard(ttk.Frame):
         klines = s.get("klines", [])
         if klines:
             last = klines[-1]
+            # 根据价格量级自适应精度
+            cp_val = s.get("current_price", 0) or last["close"]
+            if cp_val > 0:
+                p = max(0, min(8, int(-math.log10(cp_val)) + 3))
+            else:
+                p = 2
             self.lbl_ohlc.config(
-                text=f"O:{last['open']:.2f} H:{last['high']:.2f}\nL:{last['low']:.2f} C:{last['close']:.2f}"
+                text=f"O:{last['open']:.{p}f} H:{last['high']:.{p}f}\nL:{last['low']:.{p}f} C:{last['close']:.{p}f}"
             )
         else:
             self.lbl_ohlc.config(text="O:— H:— L:— C:—")

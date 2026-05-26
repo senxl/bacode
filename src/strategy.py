@@ -21,7 +21,7 @@ class GridState:
     def init_from_price(self, current_price: float) -> None:
         """用当前价格初始化网格。"""
         # 优先保留已有步长（ATR 动态更新过的），仅在未初始化时从 config 取固定值
-        if self.signed_grid_size == 0.0:
+        if abs(self.signed_grid_size) < 1e-12:
             grid_size = config.get_grid_size()
             if grid_size <= 0:
                 grid_size = 0.01  # 安全兜底，防止除零
