@@ -2,6 +2,7 @@
 订单操作：挂单、市价单、取消、查询
 """
 import logging
+from binance.exceptions import BinanceAPIException
 from . import config
 from .contract import round_price, round_quantity
 
@@ -95,8 +96,8 @@ def create_limit_order_with_fallback(
     """先用 GTX 创建，失败则回退到 GTC。"""
     try:
         return create_limit_order(client, symbol, side, price, quantity, tick_size, "GTX")
-    except Exception:
-        logger.warning("GTX 订单失败，回退到 GTC 订单")
+    except BinanceAPIException:
+        logger.warning("GTX 订单被交易所拒绝，回退到 GTC 订单")
         return create_limit_order(client, symbol, side, price, quantity, tick_size, "GTC")
 
 
