@@ -59,6 +59,22 @@ class GridOrchestrator:
             current_price,
         )
 
+    # ---------- K 线工具方法 ----------
+    def _fetch_parsed_klines(self, interval: str, limit: int) -> list[dict]:
+        """获取并解析 K 线数据，返回标准格式列表。"""
+        raw = self.client.futures_klines(symbol=self.symbol, interval=interval, limit=limit)
+        return [
+            {
+                "time": k[0],
+                "open": float(k[1]),
+                "high": float(k[2]),
+                "low": float(k[3]),
+                "close": float(k[4]),
+                "volume": float(k[5]),
+            }
+            for k in raw
+        ]
+
     # ---------- ATR 动态步长 ----------
     def _try_update_atr(self) -> None:
         """定时刷新 ATR，变化超过阈值时更新网格步长。"""
@@ -69,25 +85,12 @@ class GridOrchestrator:
         interval = config.get_atr_update_interval()
         if now - self._last_atr_update < interval:
             return
-        self._last_atr_update = now
 
         try:
-            raw = self.client.futures_klines(
-                symbol=self.symbol,
-                interval=self._kline_interval,
-                limit=max(config.get_atr_period() + 5, 50),
+            klines = self._fetch_parsed_klines(
+                config.get_atr_kline_interval(),
+                max(config.get_atr_period() + 5, 50),
             )
-            klines = []
-            for k in raw:
-                klines.append({
-                    "time": k[0],
-                    "open": float(k[1]),
-                    "high": float(k[2]),
-                    "low": float(k[3]),
-                    "close": float(k[4]),
-                    "volume": float(k[5]),
-                })
-
             atr = calc_atr(klines, config.get_atr_period())
             if atr <= 0:
                 return
@@ -102,6 +105,7 @@ class GridOrchestrator:
                         change * 100, threshold * 100,
                     )
                     self._push_state(atr_value=round(atr, 4))
+                    self._last_atr_update = now  # 成功获取，推进定时器
                     return
 
             new_grid_size = round_price(atr * config.get_atr_multiplier(), self.tick_size)
@@ -113,20 +117,30 @@ class GridOrchestrator:
                 new_grid_size if config.get_trade_type() == "LONG" else -new_grid_size
             )
             self._last_atr_value = atr
+            self._last_atr_update = now  # 成功更新，推进定时器
 
             logger.info(
-                "📐 ATR 动态步长更新 | ATR(%d)=%.4f | 旧步长=%s → 新步长=%s | 倍数=%.2f",
+                "📐 ATR 动态步长更新 | ATR(%d)=%.4f | 旧步长=%s → 新步长=%s | 倍数=%.2f | 周期=%s",
                 config.get_atr_period(), atr,
                 round_price(old_grid_size, self.tick_size),
                 new_grid_size, config.get_atr_multiplier(),
+                config.get_atr_kline_interval(),
             )
             self._push_state(
                 atr_value=round(atr, 4),
                 grid_size=new_grid_size,
                 message=f"📐 ATR步长更新: {round_price(old_grid_size, self.tick_size)} → {new_grid_size}",
             )
+
+            # ATR 更新步长后立即重建网格
+            if config.get_atr_immediate_rebuild():
+                self._cancel_all()
+                self.state.last_filled_price = self._current_price()
+                self._place_both_grid_orders()
+                logger.info("📐 ATR 步长变更，网格已立即重建")
         except Exception as e:
-            logger.warning("ATR 刷新失败: %s", e)
+            # 失败不推进定时器，下次循环立即重试
+            logger.warning("ATR 刷新失败（下次循环重试）: %s", e)
 
     # ---------- 推送到 GUI ----------
     def _push_state(self, **kwargs) -> None:
@@ -162,21 +176,7 @@ class GridOrchestrator:
         if not force and now - self._last_kline_fetch < 30.0:
             return
         try:
-            raw = self.client.futures_klines(
-                symbol=self.symbol,
-                interval=self._kline_interval,
-                limit=config.KLINE_LIMIT,
-            )
-            klines = []
-            for k in raw:
-                klines.append({
-                    "time": k[0],
-                    "open": float(k[1]),
-                    "high": float(k[2]),
-                    "low": float(k[3]),
-                    "close": float(k[4]),
-                    "volume": float(k[5]),
-                })
+            klines = self._fetch_parsed_klines(self._kline_interval, config.KLINE_LIMIT)
             self._last_kline_fetch = now
             self._push_state(klines=klines, kline_interval=self._kline_interval)
         except Exception as e:

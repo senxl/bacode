@@ -54,7 +54,8 @@ class SymbolConfig:
     __slots__ = (
         "trade_type", "leverage", "trade_quantity", "savepos_multiplier",
         "grid_size", "grid_size_over", "price_upper_limit", "price_lower_limit",
-        "grid_mode", "atr_period", "atr_multiplier", "atr_update_interval", "atr_change_threshold",
+        "grid_mode", "atr_period", "atr_multiplier", "atr_update_interval",
+        "atr_change_threshold", "atr_kline_interval", "atr_immediate_rebuild",
     )
     def __init__(self):
         self.trade_type: str = "SHORT"
@@ -71,6 +72,8 @@ class SymbolConfig:
         self.atr_multiplier: float = 0.5       # grid_size = ATR × multiplier
         self.atr_update_interval: float = 86400  # ATR 刷新间隔（秒），默认 1 天
         self.atr_change_threshold: float = 0.1 # ATR 变化超过此比例才更新步长（10%）
+        self.atr_kline_interval: str = "4h"    # ATR 用的 K 线周期（独立于 GUI）
+        self.atr_immediate_rebuild: bool = True # ATR 更新步长后是否立即重建网格
 
 
 _all_symbols: dict[str, SymbolConfig] = {}
@@ -123,6 +126,12 @@ def get_atr_update_interval() -> float:
 
 def get_atr_change_threshold() -> float:
     return _current().atr_change_threshold
+
+def get_atr_kline_interval() -> str:
+    return _current().atr_kline_interval
+
+def get_atr_immediate_rebuild() -> bool:
+    return _current().atr_immediate_rebuild
 
 def get_symbol() -> str:
     with _lock:
@@ -196,6 +205,8 @@ def _load_ini() -> bool:
             sc.atr_multiplier      = _parser.getfloat(section, "atr_multiplier", fallback=0.5)
             sc.atr_update_interval = _parser.getfloat(section, "atr_update_interval", fallback=86400.0)
             sc.atr_change_threshold = _parser.getfloat(section, "atr_change_threshold", fallback=0.1)
+            sc.atr_kline_interval  = _parser.get(section, "atr_kline_interval", fallback="4h")
+            sc.atr_immediate_rebuild = _parser.getboolean(section, "atr_immediate_rebuild", fallback=True)
             _all_symbols[section] = sc
 
         _last_mtime = mtime
