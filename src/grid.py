@@ -93,6 +93,8 @@ class GridOrchestrator:
             )
             atr = calc_atr(klines, config.get_atr_period())
             if atr <= 0:
+                self._last_atr_update = now  # 推进定时器，避免每 0.3s 重试
+                self._push_state(atr_value=0.0)
                 return
 
             threshold = config.get_atr_change_threshold()
@@ -162,6 +164,7 @@ class GridOrchestrator:
             lower_limit=config.get_price_lower_limit(),
             grid_mode=config.get_grid_mode(),
             atr_value=self._last_atr_value,
+            testnet=config.TESTNET,
         )
         base.update(kwargs)  # kwargs override base — no duplicate key errors
         gui.set_state(**base)
@@ -184,6 +187,7 @@ class GridOrchestrator:
             self._last_kline_fetch = now
             self._push_state(klines=klines, kline_interval=self._kline_interval)
         except Exception as e:
+            self._last_kline_fetch = now  # 推进定时器，避免每 0.3s 重试
             logger.warning("获取K线数据失败: %s", e)
 
     # ---------- 阶段 1: 初始化 ----------
@@ -248,12 +252,21 @@ class GridOrchestrator:
                 logger.info("补仓订单完全成交 | 成交数量: %s", current["executedQty"])
                 self._push_state(savpos_active=False, message="补仓订单已成交")
                 return None
+            if status == "CANCELED" or status == "EXPIRED":
+                logger.warning("补仓订单已被取消/过期: %s", status)
+                self._push_state(savpos_active=False, message=f"补仓订单已{status}")
+                return None
             if status in ("NEW", "PARTIALLY_FILLED"):
                 modify_order_to_queue(self.client, self.symbol, current)
                 logger.info("补仓追单修改订单成功")
                 self._push_state(message="补仓追单中...")
-        except Exception:
-            pass
+        except Exception as e:
+            # 区分"订单不存在"（可能已成交被系统清理）和网络错误
+            if "-2013" in str(e) or "Order does not exist" in str(e):
+                logger.warning("补仓订单已不存在（可能已成交），停止追踪")
+                self._push_state(savpos_active=False, message="补仓订单已完成")
+                return None
+            logger.debug("查询补仓订单状态失败（下次重试）: %s", e)
         return order
 
     # ---------- 阶段 3: 网格维护 ----------

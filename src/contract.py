@@ -1,8 +1,8 @@
 """
 交易对信息与精度计算
 """
-import math
 import logging
+from decimal import Decimal, ROUND_DOWN
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,21 @@ def get_symbol_filters(client, symbol: str) -> dict:
 
 
 def round_price(price: float, tick_size: float) -> float:
-    """按 tick_size 舍入价格。"""
-    precision = int(round(-math.log10(tick_size)))
-    return round(price, precision)
+    """按 tick_size 舍入价格（用 Decimal 避免浮点精度问题）。"""
+    if tick_size <= 0:
+        return price
+    d_price = Decimal(str(price))
+    d_tick = Decimal(str(tick_size))
+    # 向下取整到 tick_size 的整数倍
+    result = (d_price / d_tick).quantize(Decimal("1"), rounding=ROUND_DOWN) * d_tick
+    return float(result)
 
 
 def round_quantity(quantity: float, step_size: float) -> float:
-    """按 step_size 取整数量。"""
-    precision = int(round(-math.log10(step_size)))
-    quantity = round(quantity / step_size) * step_size
-    return round(quantity, precision)
+    """按 step_size 取整数量（用 Decimal 避免浮点精度问题）。"""
+    if step_size <= 0:
+        return quantity
+    d_qty = Decimal(str(quantity))
+    d_step = Decimal(str(step_size))
+    result = (d_qty / d_step).quantize(Decimal("1"), rounding=ROUND_DOWN) * d_step
+    return float(result)

@@ -41,6 +41,7 @@ _shared = {
     "running":          True,
     "klines":           [],
     "kline_interval":   config.KLINE_INTERVAL,
+    "testnet":          config.TESTNET,
 }
 
 
@@ -364,13 +365,15 @@ class Dashboard(ttk.Frame):
             return
 
         self.lbl_symbol.config(text=s.get("symbol", "—"))
-        self.lbl_env.config(text="测试网" if config.TESTNET else "主网")
+        self.lbl_env.config(
+            text="测试网" if s.get("testnet", config.TESTNET) else "主网"
+        )
 
         def _set(name, fmt, key=None):
             key = key or name
             val = s.get(key, 0)
             if isinstance(val, float):
-                text = f"{fmt(val)}" if val else "—"
+                text = f"{fmt(val)}" if val != 0 else "—"
             elif isinstance(val, bool):
                 text = "是" if val else "否"
             else:

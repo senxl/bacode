@@ -30,9 +30,11 @@ class GridState:
             )
         # 将当前价格对齐到网格
         step = abs(self.signed_grid_size)
-        self.last_filled_price = (
-            int(current_price / step) * step if step > 0 else current_price
-        )
+        if step > 0:
+            aligned = int(current_price / step) * step
+            self.last_filled_price = aligned if aligned > 0 else current_price
+        else:
+            self.last_filled_price = current_price
         self.last_filled_price_lock = False
 
     def lock(self, new_price: float) -> None:

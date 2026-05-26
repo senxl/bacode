@@ -178,7 +178,7 @@ def _load_ini() -> bool:
         TESTNET    = _parser.getboolean("general", "testnet", fallback=False)
         ACTIVE_SYMBOL = _parser.get("general", "active_symbol", fallback="CLUSDT")
 
-        POLL_INTERVAL        = _parser.getfloat("general", "poll_interval",          fallback=0.3)
+        POLL_INTERVAL        = max(0.1, _parser.getfloat("general", "poll_interval",          fallback=0.3))
         PRICE_OOR_SLEEP      = _parser.getfloat("general", "price_oor_sleep",        fallback=5.0)
         ERROR_SLEEP          = _parser.getfloat("general", "error_sleep",            fallback=1.0)
         RELOAD_CHECK_INTERVAL = _parser.getfloat("general", "reload_check_interval", fallback=3.0)
@@ -243,15 +243,14 @@ def validate() -> list[str]:
         errors.append(f"[{ACTIVE_SYMBOL}] trade_quantity 必须 > 0")
     if cur.grid_mode not in ("fixed", "atr"):
         errors.append(f"[{ACTIVE_SYMBOL}] grid_mode 必须为 fixed 或 atr，当前: {cur.grid_mode}")
-    if cur.grid_mode == "atr":
-        if cur.atr_period <= 0:
-            errors.append(f"[{ACTIVE_SYMBOL}] atr_period 必须 > 0，当前: {cur.atr_period}")
-        if cur.atr_multiplier <= 0:
-            errors.append(f"[{ACTIVE_SYMBOL}] atr_multiplier 必须 > 0，当前: {cur.atr_multiplier}")
-        if cur.atr_update_interval <= 0:
-            errors.append(f"[{ACTIVE_SYMBOL}] atr_update_interval 必须 > 0，当前: {cur.atr_update_interval}")
-        if cur.atr_change_threshold <= 0:
-            errors.append(f"[{ACTIVE_SYMBOL}] atr_change_threshold 必须 > 0，当前: {cur.atr_change_threshold}")
+    if cur.atr_period <= 0:
+        errors.append(f"[{ACTIVE_SYMBOL}] atr_period 必须 > 0，当前: {cur.atr_period}")
+    if cur.atr_multiplier <= 0:
+        errors.append(f"[{ACTIVE_SYMBOL}] atr_multiplier 必须 > 0，当前: {cur.atr_multiplier}")
+    if cur.atr_update_interval <= 0:
+        errors.append(f"[{ACTIVE_SYMBOL}] atr_update_interval 必须 > 0，当前: {cur.atr_update_interval}")
+    if cur.atr_change_threshold <= 0:
+        errors.append(f"[{ACTIVE_SYMBOL}] atr_change_threshold 必须 > 0，当前: {cur.atr_change_threshold}")
     return errors
 
 
