@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 import logging
 import time
+from datetime import datetime, timezone
 from threading import Lock
 from . import config
 
@@ -214,7 +215,6 @@ class KlineChart(tk.Canvas):
             if 0 <= idx < n:
                 k = klines[idx]
                 ts = k["time"] / 1000.0
-                from datetime import datetime, timezone
                 dt = datetime.fromtimestamp(ts, tz=timezone.utc)
                 if self._interval.endswith("m") or self._interval.endswith("h"):
                     label = dt.strftime("%H:%M")
@@ -239,6 +239,8 @@ class Dashboard(ttk.Frame):
         self._create_widgets()
 
     def _create_widgets(self):
+        self._widget_map = {}
+
         # ---------- 标题栏 ----------
         title_frame = ttk.Frame(self)
         title_frame.pack(fill="x", pady=(0, 4))
@@ -341,8 +343,6 @@ class Dashboard(ttk.Frame):
         ttk.Label(row, text=label_text + " ", font=font, width=8).pack(side="left")
         val = ttk.Label(row, text="—", font=font, foreground=fg)
         val.pack(side="right")
-        if not hasattr(self, '_widget_map'):
-            self._widget_map = {}
         self._widget_map[widget_name] = val
 
     def _on_interval_change(self, *_):
@@ -454,6 +454,6 @@ def launch():
     style = ttk.Style()
     style.theme_use("clam")
 
-    Dashboard(root)
-    root.after(config.GUI_REFRESH_MS, lambda: root.children["!dashboard"].refresh())
+    dashboard = Dashboard(root)
+    root.after(config.GUI_REFRESH_MS, dashboard.refresh)
     root.mainloop()

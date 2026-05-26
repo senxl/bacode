@@ -20,13 +20,18 @@ class GridState:
 
     def init_from_price(self, current_price: float) -> None:
         """用当前价格初始化网格。"""
-        grid_size = config.get_grid_size()
-        self.signed_grid_size = (
-            grid_size if config.get_trade_type() == "LONG" else -grid_size
-        )
+        # 优先保留已有步长（ATR 动态更新过的），仅在未初始化时从 config 取固定值
+        if self.signed_grid_size == 0.0:
+            grid_size = config.get_grid_size()
+            if grid_size <= 0:
+                grid_size = 0.01  # 安全兜底，防止除零
+            self.signed_grid_size = (
+                grid_size if config.get_trade_type() == "LONG" else -grid_size
+            )
         # 将当前价格对齐到网格
+        step = abs(self.signed_grid_size)
         self.last_filled_price = (
-            int(current_price / abs(self.signed_grid_size)) * abs(self.signed_grid_size)
+            int(current_price / step) * step if step > 0 else current_price
         )
         self.last_filled_price_lock = False
 

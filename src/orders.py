@@ -3,7 +3,7 @@
 """
 import logging
 from . import config
-from .contract import round_price
+from .contract import round_price, round_quantity
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,12 @@ def create_limit_order(
 ):
     """创建限价单，自动舍入价格。"""
     p = round_price(price, tick_size)
+    if quantity <= 0:
+        logger.error("下单数量无效: %s（symbol=%s）", quantity, symbol)
+        raise ValueError(f"下单数量必须 > 0，当前: {quantity}")
+    if p <= 0:
+        logger.error("下单价格无效: %s（symbol=%s）", p, symbol)
+        raise ValueError(f"下单价格必须 > 0，当前: {p}")
     return client.futures_create_order(
         symbol=symbol,
         side=side,
@@ -66,6 +72,9 @@ def create_limit_order(
 
 def create_market_order(client, symbol: str, side: str, quantity: float):
     """创建市价单。"""
+    if quantity <= 0:
+        logger.error("市价单数量无效: %s（symbol=%s）", quantity, symbol)
+        raise ValueError(f"市价单数量必须 > 0，当前: {quantity}")
     return client.futures_create_order(
         symbol=symbol,
         side=side,

@@ -135,6 +135,7 @@ class GridOrchestrator:
             # ATR 更新步长后立即重建网格
             if config.get_atr_immediate_rebuild():
                 self._cancel_all()
+                # 注意：用当前价近似成交价，非实际成交价
                 self.state.last_filled_price = self._current_price()
                 self._place_both_grid_orders()
                 logger.info("📐 ATR 步长变更，网格已立即重建")
@@ -274,8 +275,7 @@ class GridOrchestrator:
         if not should_trigger_breakout(self.state, price):
             return
 
-        # 重新确认价格和挂单状态
-        price = self._current_price()
+        # 确认挂单状态（价格已取过，不再重复调用）
         buy_num, sell_num = get_order_counts(self.client, self.symbol)
         if buy_num == 0 or sell_num == 0:
             return  # 网格不全，先补充网格

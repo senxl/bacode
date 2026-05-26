@@ -30,6 +30,10 @@ def calc_atr(klines: List[Dict], period: int = 14) -> float:
     返回:
         最新 ATR 值；数据不足时返回 0
     """
+    if period <= 0:
+        logger.error("ATR 周期必须 > 0，当前: %d", period)
+        return 0.0
+
     if len(klines) < period + 1:
         logger.warning("K线数据不足（%d < %d），无法计算 ATR", len(klines), period + 1)
         return 0.0

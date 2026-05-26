@@ -186,7 +186,7 @@ def _load_ini() -> bool:
         KLINE_LIMIT   = _parser.getint("gui", "kline_limit",   fallback=50)
 
         # —— 按 symbol 加载独立配置 ——
-        _all_symbols.clear()
+        new_symbols: dict[str, SymbolConfig] = {}
         for section in _parser.sections():
             if section.lower() in ("general", "gui"):
                 continue
@@ -207,7 +207,8 @@ def _load_ini() -> bool:
             sc.atr_change_threshold = _parser.getfloat(section, "atr_change_threshold", fallback=0.1)
             sc.atr_kline_interval  = _parser.get(section, "atr_kline_interval", fallback="4h")
             sc.atr_immediate_rebuild = _parser.getboolean(section, "atr_immediate_rebuild", fallback=True)
-            _all_symbols[section] = sc
+            new_symbols[section] = sc
+        _all_symbols = new_symbols
 
         _last_mtime = mtime
 
